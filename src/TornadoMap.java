@@ -1,38 +1,57 @@
 import com.google.gson.Gson;
+
 import java.io.IOException;
+import java.lang.Thread;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
+import java.time.Duration;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class TornadoMap {
     private static final String PROCESSED_ALERTS_FILE = "processed_alerts.txt";
-    private static Set<String> processedAlerts = new HashSet<>();
+    private static final Set<String> processedAlerts = new HashSet<>();
+    private static final List<String> formattedAlerts = new ArrayList<>();
     private static final Logger LOGGER = Logger.getLogger(TornadoMap.class.getName());
 
     public static void main(String[] args) {
-        // Load processed alerts
-        loadProcessedAlerts();
+        boolean keepRunning = true;
 
-        String tornadoData = fetchTornadoData();
-        System.out.println(processTornadoData(tornadoData));
+        while (keepRunning) {
+            try {
+                loadProcessedAlerts();
 
-        // Save updated processed alerts
-        saveProcessedAlerts();
+                String tornadoData = fetchTornadoData();
+                String timeStamp = new SimpleDateFormat("MM/dd HH:mm:ss").format(Calendar.getInstance().getTime());
+                System.out.println(timeStamp + ": " + processTornadoData(tornadoData));
+
+                saveProcessedAlerts();
+
+                Thread.sleep(Duration.ofMinutes(1));
+            } catch (Exception e) {
+                keepRunning = false;
+            }
+        }
     }
 
     private static void loadProcessedAlerts() {
         try {
-            processedAlerts = new HashSet<>(Files.readAllLines(Paths.get(PROCESSED_ALERTS_FILE)));
+            processedAlerts.clear();
+            List<String> lines = Files.readAllLines(Paths.get(PROCESSED_ALERTS_FILE));
+            for (String line : lines) {
+                String[] parts = line.split(",");
+                // Assuming the first part is the effective timestamp
+                processedAlerts.add(parts[0].trim());
+            }
         } catch (IOException e) {
             LOGGER.log(Level.WARNING, "Could not load processed alerts: ", e);
         }
@@ -40,11 +59,13 @@ public class TornadoMap {
 
     private static void saveProcessedAlerts() {
         try {
-            Files.write(Paths.get(PROCESSED_ALERTS_FILE), processedAlerts);
+            Files.write(Paths.get(PROCESSED_ALERTS_FILE), formattedAlerts);
+            formattedAlerts.clear(); // Clear the list after saving
         } catch (IOException e) {
             LOGGER.log(Level.SEVERE, "Could not save processed alerts: ", e);
         }
     }
+
 
     public static String processTornadoData(String jsonData) {
         Gson gson = new Gson();
@@ -57,16 +78,21 @@ public class TornadoMap {
             AlertProperties props = feature.properties;
             if (props.event != null && props.event.contains("Tornado")) {
                 if (!processedAlerts.contains(props.effective)) {
+                    tornadoFound = true; // Update this flag when a new alert is found
+
                     String formattedTime = convertTimeToMdt(props.effective);
+                    String alertString = formattedTime + "," +
+                            props.event + "," +
+                            props.areaDesc + "," +
+                            props.severity + "," +
+                            props.urgency;
 
-                    output.append("New tornado alert found: ")
-                            .append("Area: ").append(props.areaDesc).append(", ")
-                            .append("Time: ").append(formattedTime).append(", ")
-                            .append("Severity: ").append(props.severity).append("\n");
-                    tornadoFound = true;
+                    output.append(alertString).append("\n");
 
-                    // Send email notification here
+                    // Add to list for saving
+                    formattedAlerts.add(alertString);
 
+                    // Mark as processed
                     processedAlerts.add(props.effective);
                 }
             }
@@ -79,7 +105,6 @@ public class TornadoMap {
         }
     }
 
-    @org.jetbrains.annotations.Nullable
     private static String fetchTornadoData() {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
@@ -111,7 +136,6 @@ public class TornadoMap {
         private Alert(Feature[] features) {
             this.features = features;
         }
-        // other fields and getters/setters
     }
 
     static class AlertProperties {
@@ -137,6 +161,5 @@ public class TornadoMap {
 
     static class Feature {
         AlertProperties properties;
-        // other fields and methods
     }
 }
