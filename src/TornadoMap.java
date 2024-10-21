@@ -24,6 +24,9 @@ public class TornadoMap {
     private static final Logger LOGGER = Logger.getLogger(TornadoMap.class.getName());
 
     public static void main(String[] args) {
+//        debug purposes
+//        System.out.println(System.getProperty("user.dir"));
+
         boolean keepRunning = true;
 
         while (keepRunning) {
@@ -38,6 +41,7 @@ public class TornadoMap {
 
                 Thread.sleep(Duration.ofMinutes(1));
             } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Process Failed: ", e);
                 keepRunning = false;
             }
         }
